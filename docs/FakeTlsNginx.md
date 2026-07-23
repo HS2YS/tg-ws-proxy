@@ -40,6 +40,8 @@ server {
 python3 proxy/tg_ws_proxy.py \
   --port 8446 \
   --host 127.0.0.1 \
+  --public-host example.com \
+  --public-port 443 \
   --fake-tls-domain example.com \
   --proxy-protocol \
   --secret <32-hex-chars>
@@ -48,5 +50,5 @@ python3 proxy/tg_ws_proxy.py \
 Ссылка для подключения будет в формате `ee`-секрета:
 
 ```text
-tg://proxy?server=your.domain.com&port=443&secret=ee<secret><domain_hex>
+tg://proxy?server=example.com&port=443&secret=ee<secret><domain_hex>
 ```

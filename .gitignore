@@ -9,6 +9,11 @@ build/
 venv/
 .venv/
 
+# Local deployment settings
+.env
+.env.*
+!.env.example
+
 # PyInstaller
 *.manifest
 *.log

@@ -6,7 +6,7 @@ import socket as _socket
 import threading
 
 from dataclasses import dataclass, field
-from typing import Dict, List
+from typing import Dict, List, Optional
 from urllib.request import Request
 
 from .balancer import balancer
@@ -73,6 +73,8 @@ class ProxyConfig:
     fake_tls_domain: str = ''
     proxy_protocol: bool = False
     force_test_dc: bool = False
+    public_host: Optional[str] = None
+    public_port: Optional[int] = None
 
 
 proxy_config = ProxyConfig()

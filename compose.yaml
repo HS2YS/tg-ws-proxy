@@ -1,0 +1,44 @@
+services:
+  tg-ws-proxy:
+    build:
+      context: .
+    image: tg-ws-proxy:local
+    restart: unless-stopped
+    stop_grace_period: 20s
+
+    environment:
+      TG_WS_PROXY_HOST: "0.0.0.0"
+      TG_WS_PROXY_PORT: "1443"
+      TG_WS_PROXY_PUBLIC_HOST: "${TG_WS_PROXY_PUBLIC_HOST:?Set TG_WS_PROXY_PUBLIC_HOST in .env}"
+      TG_WS_PROXY_PUBLIC_PORT: "${TG_WS_PROXY_PUBLIC_PORT:-1443}"
+      TG_WS_PROXY_SECRET: "${TG_WS_PROXY_SECRET:?Set a 32-character hex TG_WS_PROXY_SECRET in .env}"
+      TG_WS_PROXY_DC_IPS: "${TG_WS_PROXY_DC_IPS:-2:149.154.167.220 4:149.154.167.220}"
+      TG_WS_PROXY_CF_WORKER: "${TG_WS_PROXY_CF_WORKER:-}"
+      TG_WS_PROXY_CF_PROXY_DOMAINS: "${TG_WS_PROXY_CF_PROXY_DOMAINS:-}"
+      TG_WS_PROXY_NO_CF_PROXY: "${TG_WS_PROXY_NO_CF_PROXY:-false}"
+      TG_WS_PROXY_FAKE_TLS_DOMAIN: "${TG_WS_PROXY_FAKE_TLS_DOMAIN:-}"
+      TG_WS_PROXY_PROXY_PROTOCOL: "${TG_WS_PROXY_PROXY_PROTOCOL:-false}"
+      TG_WS_PROXY_FORCE_TEST_DC: "${TG_WS_PROXY_FORCE_TEST_DC:-false}"
+      TG_WS_PROXY_VERBOSE: "${TG_WS_PROXY_VERBOSE:-false}"
+      TG_WS_PROXY_BUF_KB: "${TG_WS_PROXY_BUF_KB:-256}"
+      TG_WS_PROXY_POOL_SIZE: "${TG_WS_PROXY_POOL_SIZE:-4}"
+
+    ports:
+      - target: 1443
+        published: "${TG_WS_PROXY_PUBLIC_PORT:-1443}"
+        host_ip: "${TG_WS_PROXY_BIND_IP:-0.0.0.0}"
+        protocol: tcp
+
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

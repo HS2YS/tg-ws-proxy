@@ -330,6 +330,8 @@ def apply_proxy_config(cfg: dict) -> bool:
     pc = proxy_config
     pc.port = cfg.get("port", DEFAULT_CONFIG["port"])
     pc.host = cfg.get("host", DEFAULT_CONFIG["host"])
+    pc.public_host = None
+    pc.public_port = None
     pc.secret = cfg.get("secret", DEFAULT_CONFIG["secret"])
     pc.dc_redirects = dc_redirects
     pc.buffer_size = max(4, cfg.get("buf_kb", DEFAULT_CONFIG["buf_kb"])) * 1024

@@ -9,6 +9,7 @@ import hashlib
 import argparse
 import logging
 import logging.handlers
+import ipaddress
 import socket as _socket
 
 from typing import Dict, Optional, Set, Tuple
@@ -458,6 +459,46 @@ _server_stop_event = None
 _client_tasks: Set[asyncio.Task] = set()
 
 
+def _normalize_dns_name(value: str, option: str) -> str:
+    try:
+        ascii_host = value.encode("idna").decode("ascii")
+    except UnicodeError as exc:
+        raise ValueError(f"{option} is not a valid DNS name") from exc
+
+    if len(ascii_host) > 253:
+        raise ValueError(f"{option} is not a valid DNS name")
+
+    labels = ascii_host.split(".")
+    if any(
+        not label
+        or len(label) > 63
+        or label.startswith("-")
+        or label.endswith("-")
+        or not all(char.isalnum() or char == "-" for char in label)
+        for label in labels
+    ):
+        raise ValueError(f"{option} is not a valid DNS name")
+
+    return ascii_host.lower()
+
+
+def _normalize_public_host(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+
+    host = value.strip()
+    if not host:
+        raise ValueError("--public-host cannot be empty")
+
+    try:
+        return str(ipaddress.IPv4Address(host))
+    except ValueError:
+        if all(char.isdigit() or char == "." for char in host):
+            raise ValueError("--public-host is not a valid IPv4 address")
+
+    return _normalize_dns_name(host, "--public-host")
+
+
 async def _run(stop_event: Optional[asyncio.Event] = None):
     global _server_instance, _server_stop_event
     _server_stop_event = stop_event
@@ -492,16 +533,21 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
         except (OSError, AttributeError):
             pass
 
-    link_host = get_link_host(proxy_config.host)
+    link_host = proxy_config.public_host or get_link_host(proxy_config.host)
+    link_port = (
+        proxy_config.public_port
+        if proxy_config.public_port is not None
+        else proxy_config.port
+    )
     ftls = proxy_config.fake_tls_domain
     dd_link = (f"tg://proxy?server={link_host}"
-               f"&port={proxy_config.port}"
+               f"&port={link_port}"
                f"&secret=dd{proxy_config.secret}")
     ee_link = ""
     if ftls:
         domain_hex = ftls.encode('ascii').hex()
         ee_link = (f"tg://proxy?server={link_host}"
-                   f"&port={proxy_config.port}"
+                   f"&port={link_port}"
                    f"&secret=ee{proxy_config.secret}{domain_hex}")
 
     log.info("=" * 60)
@@ -628,11 +674,16 @@ def run_proxy(stop_event: Optional[asyncio.Event] = None):
 
 def main():
     ap = argparse.ArgumentParser(
-        description='Telegram MTProto WebSocket Bridge Proxy')
+        description='Telegram MTProto WebSocket Bridge Proxy',
+        allow_abbrev=False)
     ap.add_argument('--port', type=int, default=1443,
                     help='Listen port (default 1443)')
     ap.add_argument('--host', type=str, default='127.0.0.1',
                     help='Listen host (default 127.0.0.1)')
+    ap.add_argument('--public-host', type=str, default=None,
+                    help='Public host used only in the generated tg:// link')
+    ap.add_argument('--public-port', type=int, default=None,
+                    help='Public port used only in the generated tg:// link')
     ap.add_argument('--secret', type=str, default=None,
                     help='MTProto proxy secret (32 hex chars). '
                          'Auto-generated if not provided.')
@@ -699,8 +750,28 @@ def main():
         secret_hex = os.urandom(16).hex()
         log.info("Generated secret: %s", secret_hex)
 
+    if not 1 <= args.port <= 65535:
+        ap.error("--port must be between 1 and 65535")
+
+    if args.public_port is not None and not 1 <= args.public_port <= 65535:
+        ap.error("--public-port must be between 1 and 65535")
+
+    try:
+        public_host = _normalize_public_host(args.public_host)
+        fake_tls_domain = (
+            _normalize_dns_name(
+                args.fake_tls_domain.strip(), "--fake-tls-domain"
+            )
+            if args.fake_tls_domain.strip()
+            else ""
+        )
+    except ValueError as exc:
+        ap.error(str(exc))
+
     proxy_config.port = args.port
     proxy_config.host = args.host
+    proxy_config.public_host = public_host
+    proxy_config.public_port = args.public_port
     proxy_config.secret = secret_hex
     proxy_config.dc_redirects = dc_redirects
     proxy_config.buffer_size = max(4, args.buf_kb) * 1024
@@ -708,7 +779,7 @@ def main():
     proxy_config.fallback_cfproxy = not args.no_cfproxy
     proxy_config.cfproxy_user_domains = coerce_domain_list(args.cfproxy_domain)
     proxy_config.cfproxy_worker_domains = coerce_domain_list(args.cfproxy_worker_domain)
-    proxy_config.fake_tls_domain = args.fake_tls_domain.strip()
+    proxy_config.fake_tls_domain = fake_tls_domain
     proxy_config.proxy_protocol = args.proxy_protocol
     proxy_config.force_test_dc = args.force_test_dc
 
