@@ -340,7 +340,11 @@ async def _handle_client(reader, writer, secret: bytes):
         ws_timed_out = False
         all_redirects = True
 
-        ws = await ws_pool.get(dc, is_media, target, domains) if not is_test_dc else None
+        allow_pool_refill = now >= ip_fail_until.get(target, 0)
+        ws = await ws_pool.get(
+            dc, is_media, target, domains,
+            allow_refill=allow_pool_refill,
+        ) if not is_test_dc else None
         if ws:
             log.info("[%s] DC%d%s -> pool hit via %s",
                      label, dc, media_tag, target)
@@ -414,6 +418,7 @@ async def _handle_client(reader, writer, secret: bytes):
 
         dc_fail_until.pop(dc_key, None)
         ip_fail_until.pop(target, None)
+        ws_pool.report_success(dc, is_media)
         stats.connections_ws += 1
 
         splitter = None
@@ -510,12 +515,11 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
     ip_fail_until.clear()
     _client_tasks.clear()
 
-    if proxy_config.fallback_cfproxy:
-        user = proxy_config.cfproxy_user_domains
-        if user:
-            balancer.update_domains_list(user)
-        else:
-            start_cfproxy_domain_refresh()
+    user_cf_domains = proxy_config.cfproxy_user_domains
+    if user_cf_domains:
+        balancer.update_domains_list(user_cf_domains)
+    else:
+        start_cfproxy_domain_refresh()
 
     secret_bytes = bytes.fromhex(proxy_config.secret)
 
@@ -561,7 +565,7 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
         ip = proxy_config.dc_redirects.get(dc)
         log.info("    DC%d: %s", dc, ip)
     if proxy_config.fallback_cfproxy:
-        user_domain = "user" if proxy_config.cfproxy_user_domains else "auto"
+        user_domain = ", ".join(proxy_config.cfproxy_user_domains) if proxy_config.cfproxy_user_domains else "auto"
         log.info("  CF proxy:      enabled (%s)", user_domain)
     if proxy_config.cfproxy_worker_domains:
         log.info("  CF worker:     enabled (%s)",
