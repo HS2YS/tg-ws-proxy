@@ -3,6 +3,9 @@ services:
     build:
       context: .
     image: tg-ws-proxy:local
+    # Образ не содержит tini: прокси не форкается и сам обрабатывает SIGINT.
+    # docker-init, который подставляет init, и есть tini — оставлен как страховка.
+    init: true
     restart: unless-stopped
     stop_grace_period: 20s
 
