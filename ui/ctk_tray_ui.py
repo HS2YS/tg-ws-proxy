@@ -27,8 +27,12 @@ from ui.i18n import (
 
 log = logging.getLogger('tg-mtproto-proxy')
 
-_CFPROXY_HELP_URL = "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfProxy.md"
-_CFWORKER_HELP_URL = "https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/CfWorker.md"
+
+def _get_doc_url(doc_name: str) -> str:
+    from ui.i18n import get_language
+    lang = get_language().value
+    lang_folder = "EN" if lang == "en" else "RU"
+    return f"https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/{lang_folder}/{doc_name}.md"
 _CFPROXY_TEST_DCS = [1, 2, 3, 4, 5, 203]
 _CFWORKER_TEST_DST = {
     1: '149.154.175.50',
@@ -248,11 +252,11 @@ def _sync_language_combobox(combo: Any, var: Any, cfg_value: str) -> None:
 
 
 def _entry(ctk, parent, theme, *, var=None, width=0, height=36, radius=10, **kw):
-    opts = dict(
-        font=(theme.ui_font_family, 13), corner_radius=radius,
-        fg_color=theme.bg, border_color=theme.field_border,
-        border_width=1, text_color=theme.text_primary,
-    )
+    opts = {
+        "font": (theme.ui_font_family, 13), "corner_radius": radius,
+        "fg_color": theme.bg, "border_color": theme.field_border,
+        "border_width": 1, "text_color": theme.text_primary,
+    }
     if var is not None:
         opts["textvariable"] = var
     if width:
@@ -369,6 +373,7 @@ def install_tray_config_form(
     show_autostart: bool = False,
     autostart_value: bool = False,
     on_language_change: Optional[Callable[[], None]] = None,
+    on_update_click: Optional[Callable[[], None]] = None,
 ) -> TrayConfigFormWidgets:
     lang_cfg = cfg.get("language", default_config["language"])
     set_language(lang_cfg)
@@ -402,7 +407,7 @@ def install_tray_config_form(
         text_color="#ffffff", border_width=0,
         command=lambda: (
             header.winfo_toplevel().iconify(),
-            webbrowser.open("https://github.com/Flowseal/tg-ws-proxy/blob/main/docs/Funding.md"),
+            webbrowser.open(_get_doc_url("Funding")),
         ),
     ).pack(side="right", padx=(0, 6))
 
@@ -605,7 +610,7 @@ def install_tray_config_form(
         font=(theme.ui_font_family, 14), corner_radius=8,
         fg_color=theme.tg_blue, hover_color=theme.tg_blue_hover,
         text_color="#ffffff", border_width=1, border_color=theme.field_border,
-        command=lambda: webbrowser.open(_CFPROXY_HELP_URL),
+        command=lambda: webbrowser.open(_get_doc_url("CfProxy")),
     ).pack(side="right")
 
     cfproxy_user_domain_var = ctk.StringVar(value=", ".join(saved_user_domains))
@@ -696,7 +701,7 @@ def install_tray_config_form(
         font=(theme.ui_font_family, 14), corner_radius=8,
         fg_color=theme.tg_blue, hover_color=theme.tg_blue_hover,
         text_color="#ffffff", border_width=1, border_color=theme.field_border,
-        command=lambda: webbrowser.open(_CFWORKER_HELP_URL),
+        command=lambda: webbrowser.open(_get_doc_url("CfWorker")),
     ).pack(side="right")
 
     _cfworker_test_widget = ctk.CTkButton(
@@ -772,14 +777,35 @@ def install_tray_config_form(
            justify="left", wraplength=_INNER_W).pack(anchor="w", pady=(0, 8))
 
     rel_url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
-    ctk.CTkButton(
-        upd_inner, text=t("button.open_release"), height=32,
-        font=(theme.ui_font_family, 13), corner_radius=8,
-        fg_color=theme.field_bg, hover_color=theme.field_border,
-        text_color=theme.text_primary, border_width=1,
-        border_color=theme.field_border,
-        command=lambda u=rel_url: webbrowser.open(u),
-    ).pack(anchor="w")
+    if st.get("has_update") and on_update_click is not None:
+        upd_btn_row = ctk.CTkFrame(upd_inner, fg_color="transparent")
+        upd_btn_row.pack(fill="x")
+        upd_btn_row.grid_columnconfigure(0, weight=1)
+        upd_btn_row.grid_columnconfigure(1, weight=1)
+        ctk.CTkButton(
+            upd_btn_row, text=t("button.open_release"), height=32,
+            font=(theme.ui_font_family, 13), corner_radius=8,
+            fg_color=theme.field_bg, hover_color=theme.field_border,
+            text_color=theme.text_primary, border_width=1,
+            border_color=theme.field_border,
+            command=lambda u=rel_url: webbrowser.open(u),
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ctk.CTkButton(
+            upd_btn_row, text=t("button.update"), height=32,
+            font=(theme.ui_font_family, 13, "bold"), corner_radius=8,
+            fg_color=theme.tg_blue, hover_color=theme.tg_blue_hover,
+            text_color="#ffffff",
+            command=on_update_click,
+        ).grid(row=0, column=1, sticky="ew", padx=(4, 0))
+    else:
+        ctk.CTkButton(
+            upd_inner, text=t("button.open_release"), height=32,
+            font=(theme.ui_font_family, 13), corner_radius=8,
+            fg_color=theme.field_bg, hover_color=theme.field_border,
+            text_color=theme.text_primary, border_width=1,
+            border_color=theme.field_border,
+            command=lambda u=rel_url: webbrowser.open(u),
+        ).pack(anchor="w")
 
     autostart_var = None
     if show_autostart:

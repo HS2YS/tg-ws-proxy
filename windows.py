@@ -34,7 +34,7 @@ try:
 except ImportError:
     Image = None
 
-from proxy import get_link_host
+from proxy import __version__, get_link_host
 
 from utils.win32_theme import (
     is_windows_dark_theme, 
@@ -46,6 +46,9 @@ from utils.tray_common import (
     ensure_ctk_thread, ensure_dirs, load_config, load_icon, log,
     quit_ctk, release_lock, restart_proxy,
     save_config, start_proxy, stop_proxy, tg_proxy_url,
+)
+from utils.update_check import (
+    get_status, get_update_asset, run_check, RELEASES_PAGE_URL, 
 )
 from ui.ctk_tray_ui import (
     install_tray_config_buttons, install_tray_config_form,
@@ -62,6 +65,7 @@ _tray_icon: Optional[object] = None
 _config: dict = {}
 _exiting = False
 _win_mutex_handle = None
+_update_flow_lock = threading.Lock()
 
 _ERROR_ALREADY_EXISTS = 183
 
@@ -146,6 +150,7 @@ def update_ctk_form(
             width=310 if IS_FROZEN else 210,
             height=130 if IS_FROZEN else 100,
             theme=theme,
+            topmost=False,
             after_create=lambda r: r.iconbitmap(ICON_PATH),
         )
         frame = main_content_frame(ctk, root, theme, padx=16, pady=14)
@@ -203,7 +208,7 @@ def update_ctk_form(
             btns.append(btn_upd)
         btn_pg = ctk.CTkButton(
             row, text=t("button.page"), width=88, height=34,
-            font=(theme.ui_font_family, 13), command=lambda: _close_with("open"),
+            font=(theme.ui_font_family, 13), command=lambda: webbrowser.open(release_url or RELEASES_PAGE_URL),
         )
         btn_pg.pack(side="left", padx=(0, 6))
         btns.append(btn_pg)
@@ -317,6 +322,42 @@ def _perform_update(download_url: str, set_status=None) -> None:
     os._exit(0)
 
 
+def _trigger_update_flow(icon=None, item=None) -> None:
+    """Show the update dialog for an update already known to be available.
+
+    Reused by the tray "Update" item and the settings dialog's "Update"
+    button, so an update can still be started after the initial startup
+    prompt was skipped/closed.
+    """
+    if not _update_flow_lock.acquire(blocking=False):
+        return
+
+    def _show() -> None:
+        try:
+            if _exiting:
+                return
+            st = get_status()
+            if not st.get("has_update"):
+                return
+            url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
+            ver = st.get("latest") or "?"
+            asset = get_update_asset(Path(sys.executable), __version__) if IS_FROZEN else None
+
+            choice = update_ctk_form(
+                t("update.available", version=ver),
+                download_url=asset[0] if asset else None,
+                release_url=url,
+            )
+            if choice == "open":
+                webbrowser.open(url)
+        except Exception as exc:
+            log.warning("Update flow failed: %s", repr(exc))
+        finally:
+            _update_flow_lock.release()
+
+    threading.Thread(target=_show, daemon=True, name="manual-update").start()
+
+
 def _maybe_do_update(cfg: dict, is_exiting) -> None:
     if not cfg.get("check_updates", True):
         return
@@ -326,23 +367,12 @@ def _maybe_do_update(cfg: dict, is_exiting) -> None:
         if is_exiting():
             return
         try:
-            from proxy import __version__
-            from utils.update_check import RELEASES_PAGE_URL, get_status, get_update_asset, run_check
-
             run_check(__version__)
-            st = get_status()
-            if not st.get("has_update") or is_exiting():
+            if _tray_icon is not None:
+                _tray_icon.menu = _build_menu()
+            if is_exiting():
                 return
-            url = (st.get("html_url") or "").strip() or RELEASES_PAGE_URL
-            ver = st.get("latest") or "?"
-            asset = get_update_asset(Path(sys.executable), __version__) if IS_FROZEN else None
-            choice = update_ctk_form(
-                t("update.available", version=ver),
-                download_url=asset[0] if asset else None,
-                release_url=url,
-            )
-            if choice == "open":
-                webbrowser.open(url)
+            _trigger_update_flow()
         except Exception as exc:
             log.warning("Update check failed: %s", repr(exc))
 
@@ -481,7 +511,7 @@ def _edit_config_dialog() -> None:
 
         root = create_ctk_toplevel(
             ctk, title=t("app.settings_title"), width=w, height=h, theme=theme,
-            after_create=lambda r: r.iconbitmap(ICON_PATH),
+            topmost=False, after_create=lambda r: r.iconbitmap(ICON_PATH),
         )
         fpx, fpy = CONFIG_DIALOG_FRAME_PAD
         frame = main_content_frame(ctk, root, theme, padx=fpx, pady=fpy)
@@ -498,6 +528,7 @@ def _edit_config_dialog() -> None:
             show_autostart=_supports_autostart(),
             autostart_value=cfg.get("autostart", False),
             on_language_change=_refresh_tray_menu,
+            on_update_click=_trigger_update_flow,
         )
 
         _original_appearance = ctk.get_appearance_mode()
@@ -579,7 +610,7 @@ def _show_first_run() -> None:
         w, h = FIRST_RUN_SIZE
         root = create_ctk_toplevel(
             ctk, title=t("app.name"), width=w, height=h, theme=theme,
-            after_create=lambda r: r.iconbitmap(ICON_PATH),
+            topmost=False, after_create=lambda r: r.iconbitmap(ICON_PATH),
         )
 
         def on_done(open_tg: bool) -> None:
@@ -602,7 +633,7 @@ def _build_menu():
     host = _config.get("host", DEFAULT_CONFIG["host"])
     port = _config.get("port", DEFAULT_CONFIG["port"])
     link_host = get_link_host(host)
-    return pystray.Menu(
+    items = [
         pystray.MenuItem(t("tray.open_telegram", host=link_host, port=port), _on_open_in_telegram, default=True),
         pystray.MenuItem(t("tray.copy_link"), _on_copy_link),
         pystray.Menu.SEPARATOR,
@@ -611,7 +642,18 @@ def _build_menu():
         pystray.MenuItem(t("tray.logs"), _on_open_logs),
         pystray.Menu.SEPARATOR,
         pystray.MenuItem(t("tray.exit"), _on_exit),
-    )
+    ]
+
+    st = get_status()
+    if st.get("has_update"):
+        items[-2:-2] = [
+            pystray.Menu.SEPARATOR,
+            pystray.MenuItem(
+                t("tray.update", current=__version__, new=st.get("latest") or "?"),
+                _trigger_update_flow,
+            )
+        ]
+    return pystray.Menu(*items)
 
 
 # entry point
