@@ -49,7 +49,7 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
 # НЕ менять на SIGTERM. docker-entrypoint.py делает execvp, поэтому прокси работает
 # как PID 1, а ядро отбрасывает сигналы с диспозицией SIG_DFL, посланные в PID 1.
 # CPython ставит собственный обработчик SIGINT (-> KeyboardInterrupt, ловится в
-# proxy/tg_ws_proxy.py:815), но оставляет SIGTERM на SIG_DFL. С SIGTERM здесь
+# main() в proxy/tg_ws_proxy.py), но оставляет SIGTERM на SIG_DFL. С SIGTERM здесь
 # `docker stop` висел бы весь stop_grace_period и заканчивался SIGKILL.
 STOPSIGNAL SIGINT
 
