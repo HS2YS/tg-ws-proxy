@@ -579,10 +579,12 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
                  ", ".join(proxy_config.cfproxy_worker_domains))
     log.info("=" * 60)
     log.info("  Connect:")
+    # The link is read back from logs (docs/RU/README.docker.md), so a DNS
+    # --public-host must survive DomainCensorFilter; it carries the secret anyway.
     if ftls:
-        log.info("    %s", ee_link)
+        log.info("    %s", ee_link, extra={"uncensored": True})
     else:
-        log.info("    %s", dd_link)
+        log.info("    %s", dd_link, extra={"uncensored": True})
     log.info("=" * 60)
 
     async def log_stats():

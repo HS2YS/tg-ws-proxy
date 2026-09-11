@@ -108,6 +108,8 @@ class DomainCensorFilter(logging.Filter):
         )
 
     def filter(self, record):
+        if getattr(record, 'uncensored', False):
+            return True
         record.msg = self.domain_pattern.sub(self._censor_match, record.getMessage())
         record.args = ()
         return True
