@@ -303,6 +303,8 @@ async def _handle_client(reader, writer, secret: bytes):
         ws_path = WS_PATH_TEST if is_test_dc else WS_PATH
         target = proxy_config.dc_redirects.get(dc)
         is_any_cf_fallback = proxy_config.fallback_cfproxy or proxy_config.cfproxy_worker_domains
+        domains = ws_domains(dc, is_media)
+        ws = None
 
         # Fallback if DC not in config, if WS blacklisted for this DC/is_media or if connect to ip is timed out
         if (dc not in proxy_config.dc_redirects
@@ -316,34 +318,40 @@ async def _handle_client(reader, writer, secret: bytes):
                 log.info("[%s] DC%d%s WS blacklisted -> fallback",
                          label, dc, media_tag)
             else:
-                log.info("[%s] DC%d%s WS connect to %s was timed out -> fallback",
-                         label, dc, media_tag, target)
-            splitter = None
-            try:
-                splitter = MsgSplitter(relay_init, proto_int)
-            except Exception:
-                pass
-            ok = await do_fallback(
-                clt_reader, clt_writer, relay_init, label,
-                dc, is_test_dc, is_media, media_tag,
-                ctx, splitter=splitter)
-            if not ok:
-                log.warning("[%s] DC%d%s no fallback available",
-                            label, dc, media_tag)
-            return
+                # Try to get WS from pool first, might be accidental timeout
+                ws = await ws_pool.get(
+                    dc, is_media, target, domains
+                ) if not is_test_dc else None
+
+                if not ws:
+                    log.info("[%s] DC%d%s WS connect to %s was timed out -> fallback",
+                            label, dc, media_tag, target)
+                else:
+                    log.info("[%s] DC%d%s WS connect to %s was timed out, but pool hit -> using WS",
+                            label, dc, media_tag, target)
+
+            if not ws:
+                splitter = None
+                try:
+                    splitter = MsgSplitter(relay_init, proto_int)
+                except Exception:
+                    pass
+                ok = await do_fallback(
+                    clt_reader, clt_writer, relay_init, label,
+                    dc, is_test_dc, is_media, media_tag,
+                    ctx, splitter=splitter)
+                if not ok:
+                    log.warning("[%s] DC%d%s no fallback available",
+                                label, dc, media_tag)
+                return
 
         ws_timeout = WS_FAIL_TIMEOUT if now < dc_fail_until.get(dc_key, 0) else 5.0
-
-        domains = ws_domains(dc, is_media)
-        ws = None
         ws_failed_redirect = False
         ws_timed_out = False
         all_redirects = True
 
-        allow_pool_refill = now >= ip_fail_until.get(target, 0)
-        ws = await ws_pool.get(
-            dc, is_media, target, domains,
-            allow_refill=allow_pool_refill,
+        ws = ws or await ws_pool.get(
+            dc, is_media, target, domains
         ) if not is_test_dc else None
         if ws:
             log.info("[%s] DC%d%s -> pool hit via %s",
@@ -399,7 +407,7 @@ async def _handle_client(reader, writer, secret: bytes):
                 dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
             else:
                 dc_fail_until[dc_key] = now + DC_FAIL_COOLDOWN
-                log.info("[%s] DC%d%s WS cooldown for %ds",
+                log.info("[%s] DC%d%s WS failed for %ds",
                          label, dc, media_tag, int(DC_FAIL_COOLDOWN))
 
             splitter_fb = None
@@ -416,7 +424,6 @@ async def _handle_client(reader, writer, secret: bytes):
                          label, dc, media_tag)
             return
 
-        dc_fail_until.pop(dc_key, None)
         ip_fail_until.pop(target, None)
         ws_pool.report_success(dc, is_media)
         stats.connections_ws += 1
@@ -572,10 +579,12 @@ async def _run(stop_event: Optional[asyncio.Event] = None):
                  ", ".join(proxy_config.cfproxy_worker_domains))
     log.info("=" * 60)
     log.info("  Connect:")
+    # The link is read back from logs (docs/RU/README.docker.md), so a DNS
+    # --public-host must survive DomainCensorFilter; it carries the secret anyway.
     if ftls:
-        log.info("    %s", ee_link)
+        log.info("    %s", ee_link, extra={"uncensored": True})
     else:
-        log.info("    %s", dd_link)
+        log.info("    %s", dd_link, extra={"uncensored": True})
     log.info("=" * 60)
 
     async def log_stats():
@@ -795,6 +804,7 @@ def main():
 
     console = logging.StreamHandler()
     console.setFormatter(log_fmt)
+    console.addFilter(DomainCensorFilter())
     root.addHandler(console)
 
     if args.log_file:
@@ -805,6 +815,7 @@ def main():
             backups=args.log_backups,
         )
         fh.setFormatter(log_fmt)
+        fh.addFilter(DomainCensorFilter())
         root.addHandler(fh)
 
     logging.getLogger('asyncio').setLevel(logging.WARNING)
