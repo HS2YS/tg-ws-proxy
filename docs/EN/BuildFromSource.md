@@ -37,15 +37,18 @@ tg-ws-proxy-tray-linux
 ## Console Mode from Source
 
 ```bash
-tg-ws-proxy [--port PORT] [--host HOST] [--dc-ip DC:IP ...] [-v]
+tg-ws-proxy [--port PORT] [--host HOST] [--public-host HOST]
+            [--public-port PORT] [--dc-ip DC:IP ...] [-v]
 ```
 
 **Arguments:**
 
 | Argument | Default | Description |
 |---|---|---|
-| `--port` | `1443` | Proxy port |
+| `--port` | `1443` | Proxy port in the range `1..65535` |
 | `--host` | `127.0.0.1` | Proxy host |
+| `--public-host` | | Public IPv4 address or DNS name used only to build the `tg://proxy` link |
+| `--public-port` | | Public port `1..65535` used only to build the `tg://proxy` link |
 | `--secret` | `random` | 32-character hex key for client authorization |
 | `--dc-ip` | `2:149.154.167.220`, `4:149.154.167.220` | Target IP for DC (can be specified multiple times) |
 | `--no-cfproxy` | `false` | Disable [Cloudflare proxying](./CfProxy.md) attempts |
