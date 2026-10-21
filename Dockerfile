@@ -7,7 +7,9 @@ FROM python:3.12-slim
 #
 # ЗДЕСЬ НИЧЕГО НЕ КОМПИЛИРУЕТСЯ. cryptography 46.0.5 публикует abi3-колёса для
 # manylinux x86_64/aarch64/ppc64le/armv7l и musllinux; её зависимость cffi — колёса
-# для x86_64/aarch64/ppc64le/s390x/i686; certifi и pycparser — чистый Python.
+# для x86_64/aarch64/ppc64le/s390x/i686; certifi, pycparser и httpx[http2] со всеми
+# зависимостями (httpcore, h11, h2, hpack, hyperframe, anyio, idna, typing_extensions)
+# — чистый Python.
 # --only-binary=:all: закрепляет этот инвариант: отсутствие колеса даёт отказ за ~3 s
 # вместо тихой многоминутной сборки из исходников на 2-vCPU VPS.
 # НЕ возвращать build-essential/cargo/libffi-dev/libssl-dev.
@@ -30,7 +32,7 @@ RUN groupadd --system app \
 # и переиспользует его между пересборками. Если mount когда-нибудь уберут —
 # вернуть PIP_NO_CACHE_DIR=1, иначе ~10 MB кеша уедут в образ.
 RUN --mount=type=cache,target=/root/.cache/pip,sharing=locked \
-    pip install --only-binary=:all: cryptography==46.0.5 certifi
+    pip install --only-binary=:all: cryptography==46.0.5 certifi "httpx[http2]==0.28.1"
 
 WORKDIR /app
 COPY proxy ./proxy

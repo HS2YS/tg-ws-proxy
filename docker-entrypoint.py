@@ -91,6 +91,8 @@ def build_proxy_command(
 
     boolean_options = (
         ("TG_WS_PROXY_NO_CF_PROXY", "--no-cfproxy"),
+        ("TG_WS_PROXY_NO_H2", "--no-h2"),
+        ("TG_WS_PROXY_NO_SECURE", "--no-secure"),
         ("TG_WS_PROXY_PROXY_PROTOCOL", "--proxy-protocol"),
         ("TG_WS_PROXY_FORCE_TEST_DC", "--force-test-dc"),
         ("TG_WS_PROXY_VERBOSE", "--verbose"),
