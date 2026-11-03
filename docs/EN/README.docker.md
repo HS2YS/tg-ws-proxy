@@ -64,6 +64,7 @@ to Git.
 | `TG_WS_PROXY_BIND_IP` | VPS interface the port is published on | `0.0.0.0` |
 | `TG_WS_PROXY_DC_IPS` | `DC_number:IP` pairs separated by spaces | `2:149.154.167.220 4:149.154.167.220` |
 | `TG_WS_PROXY_CF_WORKER` | One or more Cloudflare Worker domains | empty |
+| `TG_WS_PROXY_NO_SECURE` | Use port 80 for CF-proxy and CF-Worker connections | `false` |
 
 Inside the container the proxy always listens on `0.0.0.0:1443`. So, for
 example, `TG_WS_PROXY_PUBLIC_PORT=443` publishes port `443` on the VPS without
@@ -84,6 +85,16 @@ changed variables.
 
 ## Checks and Maintenance
 
+To update to a new version of the fork, keep your existing `.env` and run:
+
+```bash
+git pull --ff-only
+docker compose up -d --build
+```
+
+Version v1.11.4 includes upstream Fake TLS and Cloudflare Worker pool updates.
+Your existing `.env` settings remain compatible.
+
 ```bash
 # Status and healthcheck
 docker compose ps
@@ -103,6 +114,16 @@ exits.
 
 Remember to allow incoming TCP connections to `TG_WS_PROXY_PUBLIC_PORT` in the
 VPS firewall and in your provider's firewall/security group.
+
+## Automated Checks
+
+The **Docker & Tests** workflow runs for pull requests and can also be started
+manually in GitHub Actions. It runs the Python tests and linter and builds
+images for `linux/amd64` and `linux/arm64`. On `amd64` it also checks Compose
+startup, the healthcheck, public `dd` and `ee` links, container recreation and
+graceful shutdown. These checks use a test secret and do not depend on Telegram
+availability; the Fake TLS scenario checks startup when the masking domain is
+unavailable.
 
 ## Configuring Telegram
 

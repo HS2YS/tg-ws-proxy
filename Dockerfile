@@ -22,7 +22,8 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     TG_WS_PROXY_SECRET="" \
     TG_WS_PROXY_DC_IPS="2:149.154.167.220 4:149.154.167.220" \
     TG_WS_PROXY_CF_WORKER="" \
-    TG_WS_PROXY_CF_PROXY_DOMAINS=""
+    TG_WS_PROXY_CF_PROXY_DOMAINS="" \
+    TG_WS_PROXY_NO_SECURE=false
 
 RUN groupadd --system app \
     && useradd --system --gid app --create-home --home-dir /home/app app
